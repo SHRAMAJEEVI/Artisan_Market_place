@@ -353,26 +353,55 @@ onkeyup="searchProduct()">
 </footer>
 
 <script>
+// =====================
+// CONFIG & UTILITIES
+// =====================
+
 // API base URL
 const API_BASE = '/api';
 const THEME_KEY = 'vam_theme';
 
-// Generate or retrieve session ID (using localStorage for persistence)
+// CSRF helper
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+const csrftoken = getCookie('csrftoken');
+
+// Session ID
 let sessionId = localStorage.getItem('session_id');
 if (!sessionId) {
   sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   localStorage.setItem('session_id', sessionId);
 }
 
-let products = [];
-let cartItems = [];
-let filteredProducts = [];
+// Theme
+let currentTheme = localStorage.getItem(THEME_KEY) || 'light';
+
+// Auth & user state
 let isAuthenticated = false;
 let currentUser = null;
-let currentTheme = localStorage.getItem(THEME_KEY) || 'light';
 let isArtisan = false;
 let isAdmin = false;
 
+// Products & cart
+let products = [];
+let filteredProducts = [];
+let cartItems = [];
+
+// =====================
+// THEME
+// =====================
 function applyTheme(theme){
   const body = document.body;
   const toggleBtn = document.getElementById('themeToggle');
@@ -393,12 +422,13 @@ function toggleTheme(){
 
 document.addEventListener('DOMContentLoaded', () => {
   const toggleBtn = document.getElementById('themeToggle');
-  if(toggleBtn){
-    toggleBtn.addEventListener('click', toggleTheme);
-  }
+  if(toggleBtn) toggleBtn.addEventListener('click', toggleTheme);
   applyTheme(currentTheme);
 });
 
+// =====================
+// AUTH
+// =====================
 async function fetchAuth(){
   try {
     const r = await fetch(`${API_BASE}/auth/check/`, { credentials: 'same-origin' });
@@ -424,9 +454,11 @@ function renderAuthBar(){
     const badges = [];
     if(isAdmin) badges.push('<span class="badge bg-warning text-dark ms-2">Admin</span>');
     else if(isArtisan) badges.push('<span class="badge bg-success ms-2">Artisan</span>');
-    bar.innerHTML = `<span class="me-2">Hi, ${currentUser}${badges.join('')}</span><a class="btn btn-outline-light btn-sm" href="/logout/">Logout</a>`;
+    bar.innerHTML = `<span class="me-2">Hi, ${currentUser}${badges.join('')}</span>
+                     <a class="btn btn-outline-light btn-sm" href="/logout/">Logout</a>`;
   } else {
-    bar.innerHTML = `<a class="btn btn-outline-light btn-sm me-2" href="/login/">Login</a><a class="btn btn-warning btn-sm" href="/register/">Register</a>`;
+    bar.innerHTML = `<a class="btn btn-outline-light btn-sm me-2" href="/login/">Login</a>
+                     <a class="btn btn-warning btn-sm" href="/register/">Register</a>`;
   }
 }
 
@@ -456,28 +488,25 @@ function toggleAddProductSection(){
   if(loginAlert) loginAlert.style.display = 'none';
 }
 
-// Load products from backend
-async function loadProductsFromBackend() {
+// =====================
+// PRODUCTS
+// =====================
+async function loadProductsFromBackend(){
   try {
-    const response = await fetch(`${API_BASE}/products/`, {
-      credentials: 'same-origin',
-    });
-    products = await response.json();
+    const r = await fetch(`${API_BASE}/products/`, { credentials: 'same-origin' });
+    products = await r.json();
     filteredProducts = [...products];
     loadProducts(filteredProducts);
-    loadCart();
-    loadOrders();
-  } catch (error) {
-    console.error('Error loading products:', error);
-    document.getElementById('productList').innerHTML = '<div class="col-12 text-center text-danger">Error loading products. Please refresh the page.</div>';
+  } catch(e){
+    console.error('Error loading products:', e);
+    document.getElementById('productList').innerHTML = '<div class="col-12 text-center text-danger">Error loading products. Refresh the page.</div>';
   }
 }
 
 function loadProducts(list){
-  const productList = document.getElementById("productList");
-  productList.innerHTML = "";
-
-  list.forEach((p)=>{
+  const productList = document.getElementById('productList');
+  productList.innerHTML = '';
+  list.forEach(p=>{
     const canAdd = isAuthenticated && p.is_approved;
     const loginTooltip = isAuthenticated ? '' : ' title="Login to add items"';
     const pendingTooltip = !p.is_approved ? ' title="Pending admin approval"' : '';
@@ -492,36 +521,33 @@ function loadProducts(list){
       : '';
 
     productList.innerHTML += `
-    <div class="col-md-3">
-      <div class="card h-100">
-        <img src="${p.img}" alt="${p.name}">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <h6 class="mb-0">${p.name} ${showPendingBadge}</h6>
-              ${ownerLabel}
+      <div class="col-md-3">
+        <div class="card h-100">
+          <img src="${p.img}" alt="${p.name}">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="mb-0">${p.name} ${showPendingBadge}</h6>
+                ${ownerLabel}
+              </div>
+            </div>
+            <p class="fw-bold mt-2">₹${p.price}</p>
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary btn-sm" ${addDisabledAttr}${loginTooltip || pendingTooltip} onclick="addToCart(${p.id})">
+                ${p.is_approved ? 'Add to Cart' : 'Awaiting Approval'}
+              </button>
+              ${approveButton}
+              ${deleteButton}
             </div>
           </div>
-          <p class="fw-bold mt-2">₹${p.price}</p>
-          <div class="d-grid gap-2">
-            <button class="btn btn-primary btn-sm" ${addDisabledAttr}${loginTooltip || pendingTooltip} onclick="addToCart(${p.id})">
-              ${p.is_approved ? 'Add to Cart' : 'Awaiting Approval'}
-            </button>
-            ${approveButton}
-            ${deleteButton}
-          </div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
   });
 }
 
-/* Search */
 function searchProduct(){
   const keyword = document.getElementById('searchBox').value.toLowerCase();
-  filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(keyword)
-  );
+  filteredProducts = products.filter(p => p.name.toLowerCase().includes(keyword));
   loadProducts(filteredProducts);
 }
 
@@ -533,10 +559,14 @@ async function addProduct(){
     alert('Please enter name, price and image URL');
     return;
   }
-  try{
+
+  try {
     const res = await fetch(`${API_BASE}/products/add/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrftoken
+      },
       credentials: 'same-origin',
       body: JSON.stringify({ name, price, img })
     });
@@ -557,34 +587,29 @@ async function addProduct(){
 
 async function deleteProduct(productId){
   if(!confirm('Are you sure you want to delete this product?')) return;
-  try{
-    const res = await fetch(`${API_BASE}/products/delete/${productId}/`, { 
+  try {
+    const res = await fetch(`${API_BASE}/products/delete/${productId}/`, {
       method: 'DELETE',
-      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrftoken },
+      credentials: 'same-origin'
     });
     const data = await res.json();
-    if(data.success){
-      loadProductsFromBackend();
-    } else {
-      alert(data.error || "You can't delete this item");
-    }
+    if(data.success) loadProductsFromBackend();
+    else alert(data.error || "You can't delete this item");
   } catch(e){
     alert("You can't delete this item");
   }
 }
 
 async function approveProduct(productId){
-  if(!isAdmin){
-    alert('Only admins can approve products.');
-    return;
-  }
-
+  if(!isAdmin) return alert('Only admins can approve products.');
   if(!confirm('Approve this artisan product?')) return;
-  try{
+
+  try {
     const res = await fetch(`${API_BASE}/products/approve/${productId}/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+      credentials: 'same-origin'
     });
     const data = await res.json();
     if(data.success){
@@ -598,141 +623,109 @@ async function approveProduct(productId){
   }
 }
 
-/* Add to Cart - Backend Integration */
+// =====================
+// CART
+// =====================
 async function addToCart(productId){
-  if(!isAuthenticated){
-    alert('Please login to add items to your cart.');
-    return;
-  }
+  if(!isAuthenticated) return alert('Please login to add items to your cart.');
+
   const product = products.find(p => p.id === productId);
   if(product && !product.is_approved && !isAdmin){
-    alert('This item is pending admin approval.');
-    return;
+    return alert('This item is pending admin approval.');
   }
+
   try {
-    const response = await fetch(`${API_BASE}/cart/add/`, {
+    const res = await fetch(`${API_BASE}/cart/add/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
       credentials: 'same-origin',
-      body: JSON.stringify({
-        product_id: productId,
-        session_id: sessionId
-      })
+      body: JSON.stringify({ product_id: productId, session_id: sessionId })
     });
-    
-    const data = await response.json();
-    if (data.success) {
-      loadCart();
-    } else {
-      alert('Error adding to cart: ' + (data.error || 'Unknown error'));
-    }
-  } catch (error) {
-    console.error('Error adding to cart:', error);
+    const data = await res.json();
+    if(data.success) loadCart();
+    else alert('Error adding to cart: ' + (data.error || 'Unknown error'));
+  } catch(e){
     alert('Error adding to cart. Please try again.');
   }
 }
 
-/* Delete from Cart - Backend Integration */
 async function deleteItem(cartItemId){
   try {
-    const response = await fetch(`${API_BASE}/cart/remove/${cartItemId}/?session_id=${sessionId}`, {
+    const res = await fetch(`${API_BASE}/cart/remove/${cartItemId}/?session_id=${sessionId}`, {
       method: 'DELETE',
-      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrftoken },
+      credentials: 'same-origin'
     });
-    
-    const data = await response.json();
-    if (data.success) {
-      loadCart();
-    } else {
-      alert('Error removing item: ' + (data.error || 'Unknown error'));
-    }
-  } catch (error) {
-    console.error('Error removing item:', error);
+    const data = await res.json();
+    if(data.success) loadCart();
+    else alert('Error removing item: ' + (data.error || 'Unknown error'));
+  } catch(e){
     alert('Error removing item. Please try again.');
   }
 }
 
-/* Load Cart from Backend */
-async function loadCart() {
+async function loadCart(){
   try {
-    const response = await fetch(`${API_BASE}/cart/?session_id=${sessionId}`, {
-      credentials: 'same-origin',
-    });
-    const data = await response.json();
+    const res = await fetch(`${API_BASE}/cart/?session_id=${sessionId}`, { credentials: 'same-origin' });
+    const data = await res.json();
     cartItems = data.items || [];
     renderCart(data.total || 0);
-  } catch (error) {
-    console.error('Error loading cart:', error);
+  } catch(e){
+    console.error(e);
     renderCart(0);
   }
 }
 
-/* Render Cart */
 function renderCart(total){
   const cartItemsElement = document.getElementById("cartItems");
   cartItemsElement.innerHTML = "";
-
-  if (cartItems.length === 0) {
+  if(cartItems.length === 0){
     cartItemsElement.innerHTML = '<li class="list-group-item text-center text-muted">Your cart is empty</li>';
   } else {
-    cartItems.forEach((item)=>{
+    cartItems.forEach(item=>{
       cartItemsElement.innerHTML += `
-      <li class="list-group-item d-flex justify-content-between align-items-center">
-        ${item.name}
-        <div>
-          <span class="me-2">₹${item.price}</span>
-          <button class="btn btn-danger btn-sm"
-          onclick="deleteItem(${item.id})">❌</button>
-        </div>
-      </li>`;
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          ${item.name}
+          <div>
+            <span class="me-2">₹${item.price}</span>
+            <button class="btn btn-danger btn-sm" onclick="deleteItem(${item.id})">❌</button>
+          </div>
+        </li>`;
     });
   }
-
   document.getElementById("total").innerText = total;
 }
 
-/* Place Order - Backend Integration */
 async function placeOrder(){
-  if(cartItems.length === 0){
-    alert("Your cart is empty!");
-    return;
-  }
-  
+  if(cartItems.length === 0) return alert("Your cart is empty!");
   try {
-    const response = await fetch(`${API_BASE}/order/place/`, {
+    const res = await fetch(`${API_BASE}/order/place/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
       credentials: 'same-origin',
-      body: JSON.stringify({
-        session_id: sessionId
-      })
+      body: JSON.stringify({ session_id: sessionId })
     });
-    
-    const data = await response.json();
-    if (data.success) {
-      alert(`Order placed successfully!\nOrder ID: #${data.order_id}\nTotal: ₹${data.total}\n\nThank you for supporting village artisans.`);
+    const data = await res.json();
+    if(data.success){
+      alert(`Order placed successfully!\nOrder ID: #${data.order_id}\nTotal: ₹${data.total}`);
       cartItems = [];
       loadCart();
       loadOrders();
     } else {
       alert('Error placing order: ' + (data.error || 'Unknown error'));
     }
-  } catch (error) {
-    console.error('Error placing order:', error);
+  } catch(e){
     alert('Error placing order. Please try again.');
   }
 }
 
+// =====================
+// ORDERS
+// =====================
 async function loadOrders(){
-  try{
-    const r = await fetch(`${API_BASE}/orders/?session_id=${sessionId}`, {
-      credentials: 'same-origin',
-    });
-    const orders = await r.json();
+  try {
+    const res = await fetch(`${API_BASE}/orders/?session_id=${sessionId}`, { credentials: 'same-origin' });
+    const orders = await res.json();
     const list = document.getElementById('ordersList');
     list.innerHTML = '';
     if(!orders.length){
@@ -743,40 +736,45 @@ async function loadOrders(){
       const items = o.items.map(i => `${i.name} (₹${i.price})`).join(', ');
       const li = document.createElement('li');
       li.className = 'list-group-item d-flex justify-content-between align-items-center';
-      li.innerHTML = `<div><strong>#${o.id}</strong> · ₹${o.total} · ${new Date(o.created_at).toLocaleString()}<br><small>${items}</small></div>` + (isAuthenticated ? `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder(${o.id})">Delete</button>` : '');
+      li.innerHTML = `<div><strong>#${o.id}</strong> · ₹${o.total} · ${new Date(o.created_at).toLocaleString()}<br><small>${items}</small></div>` +
+                     (isAuthenticated ? `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder(${o.id})">Delete</button>` : '');
       list.appendChild(li);
     });
   } catch(e){
     const list = document.getElementById('ordersList');
-    if(list){ list.innerHTML = '<li class="list-group-item text-center text-muted">Failed to load orders</li>'; }
+    if(list) list.innerHTML = '<li class="list-group-item text-center text-muted">Failed to load orders</li>';
   }
 }
 
 async function deleteOrder(orderId){
   if(!confirm('Delete this order?')) return;
-  try{
-    const r = await fetch(`${API_BASE}/orders/delete/${orderId}/`, { 
+  try {
+    const res = await fetch(`${API_BASE}/orders/delete/${orderId}/`, {
       method: 'DELETE',
-      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrftoken },
+      credentials: 'same-origin'
     });
-    const d = await r.json();
-    if(d.success){
-      loadOrders();
-    } else {
-      alert(d.error || 'Failed to delete order');
-    }
+    const data = await res.json();
+    if(data.success) loadOrders();
+    else alert(data.error || 'Failed to delete order');
   } catch(e){
     alert('Failed to delete order');
   }
 }
 
+// =====================
+// INIT
+// =====================
 async function init(){
   await fetchAuth();
   await loadProductsFromBackend();
+  await loadCart();
+  await loadOrders();
 }
 
 init();
 </script>
+
 
 </body>
 </html>
