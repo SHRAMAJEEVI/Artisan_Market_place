@@ -18,7 +18,8 @@ SECRET_KEY = 'django-insecure-village-artisan-market-key-change-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['artisan-market-place.onrender.com']
+
 
 
 # Application definition
